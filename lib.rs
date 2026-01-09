@@ -1,15 +1,47 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
 
 #[ink::contract]
-mod web3_asset_vesting {
+mod vesting {
 
-    /// Defines the storage of your contract.
-    /// Add new fields to the below struct in order
-    /// to add new static storage fields to your contract.
+    /// Vested balances
+    #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    pub struct VestedBalance {
+        /// The address that holds the vested balance
+        pub address: AccountId,
+        /// The original balance
+        pub original_balance: u128,
+        /// This balance is available for transfer request
+        pub free_balance: u128,
+        /// This balance is still frozen
+        pub frozen_balance: u128,
+        /// This is the total balance that is already requested and transferred to a recipient
+        pub total_requested_balance: u128,        
+    }
+
+    /// List of requested transfers
+    #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    pub struct RequestedBalance {
+        /// The address that holds the vested balance
+        pub address: AccountId,
+        /// The recipient address of the frozen balance
+        pub recipient_address: AccountId,
+        /// Requested balance
+        pub requested_balance: u128, 
+        /// Transfer transaction hash
+        pub tx_hash: Vec<u8>,
+    }
+
+    /// Contract Storage
     #[ink(storage)]
-    pub struct Web3AssetVesting {
-        /// Stores a single `bool` value on the storage.
-        value: bool,
+    pub struct Vesting {
+        /// The asset that is vested.
+        pub asset_id: u128,
+        /// Vested balances
+        pub vested_balances: Vec<VestedBalance>,
+        /// Requested balances
+        pub vested_balances: Vec<VestedBalance>,
     }
 
     impl Web3AssetVesting {
