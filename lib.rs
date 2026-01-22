@@ -3,10 +3,14 @@
 #[ink::contract]
 mod vesting {
 
+    use ink::prelude::vec::Vec;
+
     /// Error Messages
     #[derive(scale::Encode, scale::Decode, Debug, Clone, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum Error {
+        /// Bad origin error, e.g., wrong caller
+        BadOrigin,
         /// There is already an existing vested balance for that address
         VestedBalanceExist,
     }
@@ -15,6 +19,8 @@ mod vesting {
     #[derive(scale::Encode, scale::Decode, Debug, Clone, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum Success {
+        /// Vesting setup successful
+        VestingSetupSuccess,
         /// Success adding vested balance
         VestedBalanceAdded,
     }
@@ -35,34 +41,38 @@ mod vesting {
         status: VestingStatus,
     } 
 
+    /// Vested balance schedules
+    #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    pub struct VestedBalanceSchedule {
+        /// Schedule number 1-100
+        pub schedule_number: u8,
+        /// Schedule balance
+        pub schedule_balance: u128,
+        /// Status (0-Frozen, 1-Liquid, 2-Requested, 3-Transferred)
+        pub status: u8,
+        /// Transfer recipient
+        pub recipient_address: AccountId,
+        /// Particulars
+        pub particulars: Vec<u8>,
+    }    
+
     /// Vested balances
     #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct VestedBalance {
         /// The address that holds the vested balance
         pub address: AccountId,
+        /// Vested schedules
+        pub vested_balance_schedules: Vec<VestedBalanceSchedule>,
         /// The original balance
         pub original_balance: u128,
-        /// This balance is available for transfer request
-        pub free_balance: u128,
-        /// This balance is still frozen
+        /// The total frozen balance
         pub frozen_balance: u128,
-        /// This is the total balance that is already requested and transferred to a recipient
-        pub total_requested_balance: u128,        
-    }
-
-    /// List of requested transfers
-    #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
-    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub struct RequestedBalance {
-        /// The address that holds the vested balance
-        pub address: AccountId,
-        /// The recipient address of the frozen balance
-        pub recipient_address: AccountId,
-        /// Requested balance
-        pub requested_balance: u128, 
-        /// Transfer transaction hash
-        pub tx_hash: Vec<u8>,
+        /// The total requested balance
+        pub requested_balance: u128,
+        /// The total transferred balance
+        pub transferred_balance: u128,   
     }
 
     /// Contract Storage
@@ -70,21 +80,26 @@ mod vesting {
     pub struct Vesting {
         /// The asset that is vested.
         pub asset_id: u128,
+        /// Total number of scheduled vested balances
+        pub total_vested_schedule: u8,
         /// Vested balances
         pub vested_balances: Vec<VestedBalance>,
-        /// Requested balances
-        pub requested_balances: Vec<RequestedBalance>,
+        /// Vesting owner
+        pub vesting_owner: AccountId,
     }
 
     impl Vesting {
         /// Constructor 
         #[ink(constructor)]
-        pub fn new(asset_id: u128) -> Self {
+        pub fn new(asset_id: u128, total_vested_schedule: u8) -> Self {
+
+            let caller = Self::env().caller();
 
             Self { 
                 asset_id: asset_id, 
+                total_vested_schedule: total_vested_schedule,
                 vested_balances: Vec::new(),
-                requested_balances: Vec::new(),
+                vesting_owner: caller,
             }
 
         }
@@ -93,36 +108,47 @@ mod vesting {
         #[ink(constructor)]
         pub fn default() -> Self {
 
-            Self::new(0u128)
+            Self::new(0u128, 0u8)
 
         }
 
-        /// Add a vested balance
+        /// Setup vesting
         #[ink(message)]
-        pub fn add_vested_balance(&mut self,
-            address: AccountId,
-            original_balance: u128,) -> Result<(), Error> {
+        pub fn setup_vesting(&mut self,
+            asset_id: u128,
+            total_vested_schedule: u8,) -> Result<(), Error> {
             
             let caller = self.env().caller();
+            if self.env().caller() != self.vesting_owner {
+                self.env().emit_event(VestingEvent {
+                    operator: caller,
+                    status: VestingStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
+            } 
 
-            /// The initial vested balance are frozen
-            let new_vested_balance = VestedBalance {
-                address: address,
-                original_balance: original_balance,
-                free_balance: 0,
-                frozen_balance: original_balance,
-                total_requested_balance: 0,
-            };
-
-            self.vested_balances.push(new_vested_balance);
-
+            // The setup will erase the existing vested balances
+            self.asset_id = asset_id;
+            self.total_vested_schedule = total_vested_schedule;
+            self.vested_balances =  Vec::new();
+            
             self.env().emit_event(VestingEvent {
                 operator: caller,
-                status: VestingStatus::EmitSuccess(Success::VestedBalanceAdded),
+                status: VestingStatus::EmitSuccess(Success::VestingSetupSuccess),
             });
 
             Ok(())
         }
+
+        #[ink(message)]
+        pub fn get_vesting_info(&self,) -> (u128, u8, AccountId) {
+            (
+                self.asset_id,
+                self.total_vested_schedule,
+                self.vesting_owner,
+            )
+        }
+
     }
 
     /// Unit tests
@@ -135,7 +161,6 @@ mod vesting {
         #[ink::test]
         fn default_works() {
             let vesting = Vesting::default();
-            assert_eq!(vesting.get(), false);
         }
 
     }
