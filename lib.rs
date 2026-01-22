@@ -19,6 +19,8 @@ mod vesting {
         VestedBalanceScheduleNotFound,
         /// Vested balance schedule not liquid
         VestedBalanceScheduleNotLiquid,
+        /// Vested balance schedule not requested
+        VestedBalanceScheduleNotRequested,
     }
 
     /// Success Messages
@@ -33,6 +35,8 @@ mod vesting {
         VestedBalanceScheduleThawed,        
         /// Request for transfer successful
         VestedBalanceScheduleRequested,
+        /// Request for transfer successful
+        VestedBalanceScheduleApproved,
     }
 
     /// Vesting Status
@@ -338,6 +342,78 @@ mod vesting {
                 });
 
             }
+
+            Ok(())
+        }
+
+        /// Approve transfer
+        #[ink(message)]
+        pub fn approve_transfer(&mut self,
+            requesting_address: AccountId,
+            schedule_number: u8,
+            tx_hash: Vec<u8>) -> Result<(), Error> {
+            
+            // Check the caller, it must be the owner
+            let caller = self.env().caller();
+            if self.env().caller() != self.vesting_owner {
+                self.env().emit_event(VestingEvent {
+                    operator: caller,
+                    status: VestingStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
+            }
+
+            if let Some(vested_balance) = self.vested_balances.iter_mut().find(|v| v.address == requesting_address) {
+
+                // 2️. Find the schedule in the caller's vested_balance
+                if let Some(schedule) = vested_balance.vested_balance_schedules.iter_mut()
+                    .find(|s| s.schedule_number == schedule_number) {
+
+                    // 3️. Ensure the schedule is requested
+                    if schedule.status == 2 {
+
+                        // Update the schedule
+                        schedule.status = 3;                    // Requested
+                        schedule.particulars = tx_hash;         // Tx-hash
+
+                        // Recalculate balances
+                        Self::calculate_balances(vested_balance);
+
+                        // Emit success event
+                        self.env().emit_event(VestingEvent {
+                            operator: caller,
+                            status: VestingStatus::EmitSuccess(Success::VestedBalanceScheduleApproved),
+                        });
+
+                    } else {
+
+                        // Schedule not liquid
+                        self.env().emit_event(VestingEvent {
+                            operator: caller,
+                            status: VestingStatus::EmitError(Error::VestedBalanceScheduleNotRequested),
+                        });
+
+                    }
+
+                } else {
+
+                    // Schedule not found
+                    self.env().emit_event(VestingEvent {
+                        operator: caller,
+                        status: VestingStatus::EmitError(Error::VestedBalanceScheduleNotFound),
+                    });
+
+                }
+
+            } else {
+
+                // Caller has no vested balance
+                self.env().emit_event(VestingEvent {
+                    operator: caller,
+                    status: VestingStatus::EmitError(Error::VestedBalanceNotFound),
+                });
+
+            }            
 
             Ok(())
         }
