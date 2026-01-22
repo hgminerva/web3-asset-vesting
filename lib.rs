@@ -13,6 +13,12 @@ mod vesting {
         BadOrigin,
         /// There is already an existing vested balance for that address
         VestedBalanceAlreadyExist,
+        /// Vested balance not found
+        VestedBalanceNotFound,
+        /// Vested balance schedule not found
+        VestedBalanceScheduleNotFound,
+        /// Vested balance schedule not liquid
+        VestedBalanceScheduleNotLiquid,
     }
 
     /// Success Messages
@@ -23,6 +29,10 @@ mod vesting {
         VestingSetupSuccess,
         /// Success adding vested balance
         VestedBalanceAdded,
+        /// Success adding vested balance scheduled thawed
+        VestedBalanceScheduleThawed,        
+        /// Request for transfer successful
+        VestedBalanceScheduleRequested,
     }
 
     /// Vesting Status
@@ -52,7 +62,7 @@ mod vesting {
         /// Status (0-Frozen, 1-Liquid, 2-Requested, 3-Transferred)
         pub status: u8,
         /// Transfer recipient
-        pub recipient_address: AccountId,
+        pub recipient_address: Option<AccountId>,
         /// Particulars
         pub particulars: Vec<u8>,
     }    
@@ -69,6 +79,8 @@ mod vesting {
         pub original_balance: u128,
         /// The total frozen balance
         pub frozen_balance: u128,
+        /// The total liquid balance
+        pub liquid_balance: u128,
         /// The total requested balance
         pub requested_balance: u128,
         /// The total transferred balance
@@ -187,7 +199,7 @@ mod vesting {
                     schedule_number: i,
                     schedule_balance: schedule_balance,
                     status: 0,                      // 0 = Frozen - Default status
-                    recipient_address: address,     // the address is the default recipient
+                    recipient_address: None,     // the address is the default recipient
                     particulars: Vec::new(),
                 });
             }
@@ -197,7 +209,8 @@ mod vesting {
                 address: address,
                 vested_balance_schedules: schedules,
                 original_balance: original_balance,
-                frozen_balance: 0,
+                frozen_balance: original_balance,
+                liquid_balance: 0,
                 requested_balance: 0,
                 transferred_balance: 0,   
             });
@@ -226,6 +239,125 @@ mod vesting {
         #[ink(message)]
         pub fn get_all_vested_balance(&self,) -> Vec<VestedBalance> {
             self.vested_balances.clone()
+        }
+    
+        /// Thaw frozen balances
+        #[ink(message)]
+        pub fn thaw_vested_balances(&mut self,
+            schedule_number: u8,) -> Result<(), Error> {
+            
+            // Check the caller, it must be the owner
+            let caller = self.env().caller();
+            if self.env().caller() != self.vesting_owner {
+                self.env().emit_event(VestingEvent {
+                    operator: caller,
+                    status: VestingStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
+            } 
+
+            // Iterate all vested frozen balances on a given schedule number and thaw 
+            for vested_balance in self.vested_balances.iter_mut() {
+
+                // Change the status
+                for schedule in vested_balance.vested_balance_schedules.iter_mut() {
+                    if schedule.schedule_number == schedule_number && schedule.status == 0 {
+                        schedule.status = 1; // 1 = Liquid (thawed)
+                    }
+                }
+
+                // Calculate balances of the vested address
+                Self::calculate_balances(vested_balance);
+            }  
+
+            self.env().emit_event(VestingEvent {
+                operator: caller,
+                status: VestingStatus::EmitSuccess(Success::VestedBalanceScheduleThawed),
+            });
+
+            Ok(())
+        }
+
+        /// Request for transfer
+        #[ink(message)]
+        pub fn request_transfer(&mut self,
+            schedule_number: u8,
+            recipient_address: AccountId) -> Result<(), Error> {
+
+            let caller = self.env().caller();
+
+            // 1️. Find the caller's vested balance
+            if let Some(vested_balance) = self.vested_balances.iter_mut().find(|v| v.address == caller) {
+
+                // 2️. Find the schedule in the caller's vested_balance
+                if let Some(schedule) = vested_balance.vested_balance_schedules.iter_mut()
+                    .find(|s| s.schedule_number == schedule_number) {
+
+                    // 3️. Ensure the schedule is liquid
+                    if schedule.status == 1 {
+
+                        // Update the schedule
+                        schedule.status = 2; // Requested
+                        schedule.recipient_address = Some(recipient_address);
+
+                        // Recalculate balances
+                        Self::calculate_balances(vested_balance);
+
+                        // Emit success event
+                        self.env().emit_event(VestingEvent {
+                            operator: caller,
+                            status: VestingStatus::EmitSuccess(Success::VestedBalanceScheduleRequested),
+                        });
+
+                    } else {
+
+                        // Schedule not liquid
+                        self.env().emit_event(VestingEvent {
+                            operator: caller,
+                            status: VestingStatus::EmitError(Error::VestedBalanceScheduleNotLiquid),
+                        });
+
+                    }
+
+                } else {
+
+                    // Schedule not found
+                    self.env().emit_event(VestingEvent {
+                        operator: caller,
+                        status: VestingStatus::EmitError(Error::VestedBalanceScheduleNotFound),
+                    });
+
+                }
+
+            } else {
+
+                // Caller has no vested balance
+                self.env().emit_event(VestingEvent {
+                    operator: caller,
+                    status: VestingStatus::EmitError(Error::VestedBalanceNotFound),
+                });
+
+            }
+
+            Ok(())
+        }
+
+        /// Helper function to calculate balances
+        fn calculate_balances(vested_balance: &mut VestedBalance) {
+            vested_balance.frozen_balance = 0;
+            vested_balance.liquid_balance = 0;
+            vested_balance.requested_balance = 0;
+            vested_balance.transferred_balance = 0;
+
+            for schedule in vested_balance.vested_balance_schedules.iter() {
+                match schedule.status {
+                    0 => vested_balance.frozen_balance += schedule.schedule_balance,
+                    1 => vested_balance.liquid_balance += schedule.schedule_balance,
+                    2 => vested_balance.requested_balance += schedule.schedule_balance,
+                    3 => vested_balance.transferred_balance += schedule.schedule_balance,
+                    _ => {}, // status 1 = Liquid, ignored
+                }
+            }
         }
     }
 
