@@ -12,7 +12,7 @@ mod vesting {
         /// Bad origin error, e.g., wrong caller
         BadOrigin,
         /// There is already an existing vested balance for that address
-        VestedBalanceExist,
+        VestedBalanceAlreadyExist,
     }
 
     /// Success Messages
@@ -140,6 +140,7 @@ mod vesting {
             Ok(())
         }
 
+        /// Get vesting information
         #[ink(message)]
         pub fn get_vesting_info(&self,) -> (u128, u8, AccountId) {
             (
@@ -149,6 +150,83 @@ mod vesting {
             )
         }
 
+        /// Add vested balances
+        #[ink(message)]
+        pub fn add_vested_balance(&mut self,
+            address: AccountId,
+            original_balance: u128,) -> Result<(), Error> {
+            
+            // Check the caller, it must be the owner
+            let caller = self.env().caller();
+            if self.env().caller() != self.vesting_owner {
+                self.env().emit_event(VestingEvent {
+                    operator: caller,
+                    status: VestingStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
+            } 
+
+            // Check if the address already exist
+            if self.vested_balances.iter().any(|v| v.address == address)
+            {
+                self.env().emit_event(VestingEvent {
+                    operator: caller,
+                    status: VestingStatus::EmitError(Error::VestedBalanceAlreadyExist),
+                });
+                return Ok(());
+            }
+
+            // Compute for the vested balance schedules
+            let mut schedules: Vec<VestedBalanceSchedule> =
+                Vec::with_capacity(self.total_vested_schedule as usize);
+
+            let schedule_balance = original_balance / self.total_vested_schedule as u128;
+
+            for i in 1..=self.total_vested_schedule {
+                schedules.push(VestedBalanceSchedule {
+                    schedule_number: i,
+                    schedule_balance: schedule_balance,
+                    status: 0,                      // 0 = Frozen - Default status
+                    recipient_address: address,     // the address is the default recipient
+                    particulars: Vec::new(),
+                });
+            }
+
+            // Save the vested balance
+            self.vested_balances.push(VestedBalance {
+                address: address,
+                vested_balance_schedules: schedules,
+                original_balance: original_balance,
+                frozen_balance: 0,
+                requested_balance: 0,
+                transferred_balance: 0,   
+            });
+
+            self.env().emit_event(VestingEvent {
+                operator: caller,
+                status: VestingStatus::EmitSuccess(Success::VestedBalanceAdded),
+            });
+
+            Ok(())
+        }
+
+        /// Get a vested balance per address
+        #[ink(message)]
+        pub fn get_vested_balance(
+            &self,
+            address: AccountId,
+        ) -> Option<VestedBalance> {
+            self.vested_balances
+                .iter()
+                .find(|v| v.address == address)
+                .cloned()
+        }
+
+        /// Get all vested balances
+        #[ink(message)]
+        pub fn get_all_vested_balance(&self,) -> Vec<VestedBalance> {
+            self.vested_balances.clone()
+        }
     }
 
     /// Unit tests
