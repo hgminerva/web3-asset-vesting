@@ -31,6 +31,8 @@ mod vesting {
         VestingSetupSuccess,
         /// Success adding vested balance
         VestedBalanceAdded,
+        /// Success removing vested balance
+        VestedBalanceRemoved,
         /// Success adding vested balance scheduled thawed
         VestedBalanceScheduleThawed,        
         /// Request for transfer successful
@@ -418,6 +420,46 @@ mod vesting {
             Ok(())
         }
 
+        /// Removes the balance and its schedules regardless of the status
+        #[ink(message)]
+        pub fn remove_vested_balance(&mut self,
+            address: AccountId,) -> Result<(), Error> {
+
+            // Check the caller, it must be the owner
+            let caller = self.env().caller();
+            if self.env().caller() != self.vesting_owner {
+                self.env().emit_event(VestingEvent {
+                    operator: caller,
+                    status: VestingStatus::EmitError(Error::BadOrigin),
+                });
+                return Ok(());
+            } 
+
+            let index = match self
+                .vested_balances
+                .iter()
+                .position(|v| v.address == address)
+            {
+                Some(i) => i,
+                None => {
+                    self.env().emit_event(VestingEvent {
+                        operator: caller,
+                        status: VestingStatus::EmitError(Error::VestedBalanceNotFound),
+                    });
+                    return Ok(());
+                }
+            };
+
+            self.vested_balances.swap_remove(index);
+
+            self.env().emit_event(VestingEvent {
+                operator: caller,
+                status: VestingStatus::EmitSuccess(Success::VestedBalanceRemoved),
+            });
+
+            Ok(())
+        }
+        
         /// Helper function to calculate balances
         fn calculate_balances(vested_balance: &mut VestedBalance) {
             vested_balance.frozen_balance = 0;

@@ -23,6 +23,7 @@ export function decode(data) {
     const successMap = [
         "Success::VestingSetupSuccess",
         "Success::VestedBalanceAdded",
+        "Success::VestedBalanceRemoved",
         "Success::VestedBalanceScheduleThawed",
         "Success::VestedBalanceScheduleRequested",
         "Success::VestedBalanceScheduleApproved",
