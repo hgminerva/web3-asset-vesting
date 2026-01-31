@@ -68,7 +68,7 @@ stream.on("data", async (data) => {
     });
 
     // 30 seconds delay
-    await sleep(5000); 
+    await sleep(20000); 
 
   } catch (err) {
     console.error("Error processing row:", err);
