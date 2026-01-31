@@ -28,8 +28,8 @@ const storageDepositLimit = null;
 
 /// Reading and processing the CSV file
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const stream = fs.createReadStream("./live/vested_address2.csv").pipe(csv());
-///const stream = fs.createReadStream("./live/vested_address3.csv").pipe(csv());
+///const stream = fs.createReadStream("./live/vested_address2.csv").pipe(csv());
+const stream = fs.createReadStream("./live/vested_address3.csv").pipe(csv());
 ///const stream = fs.createReadStream("./live/vested_address4.csv").pipe(csv());
 ///const stream = fs.createReadStream("./live/vested_address5.csv").pipe(csv());
 ///const stream = fs.createReadStream("./live/vested_address6.csv").pipe(csv());
