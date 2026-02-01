@@ -36,9 +36,9 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 ///const stream = fs.createReadStream("./live/vested_address7.csv").pipe(csv());
 ///const stream = fs.createReadStream("./live/vested_address8.csv").pipe(csv());
 ///const stream = fs.createReadStream("./live/vested_address9.csv").pipe(csv());
-const stream = fs.createReadStream("./live/vested2_address1.csv").pipe(csv());
+///const stream = fs.createReadStream("./live/vested2_address1.csv").pipe(csv());
 ///const stream = fs.createReadStream("./live/vested2_address2.csv").pipe(csv());
-///const stream = fs.createReadStream("./live/vested2_address3.csv").pipe(csv());
+const stream = fs.createReadStream("./live/vested2_address3.csv").pipe(csv());
 
 stream.on("data", async (data) => {
   stream.pause(); // pause stream while processing
